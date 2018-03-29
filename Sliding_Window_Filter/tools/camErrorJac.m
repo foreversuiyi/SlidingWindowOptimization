@@ -1,10 +1,10 @@
-function [ext_error, ext_jacxk, ext_jaclk] = camErrorJac(k_state, valid_obs_idx, cam, lm_est, cam_obs)
+function [ext_error, ext_jacxk, ext_jaclk] = camErrorJac(k_state, valid_obs_num, cam, lm_est, cam_obs)
 
 %% Compute the error vector and jacobians
-ext_error = zeros(2*length(valid_obs_idx), 1);
-ext_jacxk = zeros(2*length(valid_obs_idx), 6);
-ext_jaclk = zeros(2*length(valid_obs_idx), 3);
-for k = 1:length(valid_obs_idx)
+ext_error = zeros(2*valid_obs_num, 1);
+ext_jacxk = zeros(2*valid_obs_num, 6);
+ext_jaclk = zeros(2*valid_obs_num, 3);
+for k = 1:valid_obs_num
     idx = 1 + 2*(k -1);
     obs = cam_obs(:, 1, k);
     lm_pos = lm_est(:,k);

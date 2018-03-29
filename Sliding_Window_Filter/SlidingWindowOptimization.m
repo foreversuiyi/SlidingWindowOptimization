@@ -92,7 +92,6 @@ for win_idx = start_idx:end_idx
                 unique_lm_obs = unique_lm_obs + 1;
                 obs_lm_ids(end+1) = obslm_idx;
             end
-            %% Testing Jacobian
         end
     end
     % Start Iteration
@@ -113,7 +112,7 @@ for win_idx = start_idx:end_idx
             imu_measure.vel = all_imu_measure.vel(:,k-1);
             ts = time_stamp(k) - time_stamp(k-1);
             
-            % Interoceptive IMU Error and Jacobians
+            % Interoceptive IMU State Error and Jacobians
             k_state = current_states{kidx+1};
             pre_k_state = current_states{kidx};
             [int_error, int_jacxk, int_jacwk] = imuErrorJac(k_state, pre_k_state, imu_measure, ts);
@@ -124,7 +123,7 @@ for win_idx = start_idx:end_idx
                 fprintf('Tracking %d landmarks. \n', length(valid_obs_idx));
             end
             if ~isempty(valid_obs_idx)
-                [ext_error, ext_jacxk, ext_jaclk] = camErrorJac(k_state, valid_obs_idx, cam, lm_est(:,valid_obs_idx), all_cam_obs(1:2,k,valid_obs_idx));
+                [ext_error, ext_jacxk, ext_jaclk] = camErrorJac(k_state, length(valid_obs_idx), cam, lm_est(:,valid_obs_idx), all_cam_obs(1:2,k,valid_obs_idx));
             else
                 ext_error = [];
             end
