@@ -2,7 +2,7 @@ clc
 clear
 close all
 addpath('tools')
-file_name = 'dataset2';
+file_name = '2011_09_26_drive_0001_sync_KLT.mat';
 load(file_name);
 %% Parameters Initialization
 % Camera Parameters
