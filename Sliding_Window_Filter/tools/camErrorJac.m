@@ -57,7 +57,7 @@ fy = cam.fy;
 
 Jac = [fx/z, 0, -(1/z^2)*(fx*x); ...
        0, fy/z, -(1/z^2)*(fy*y)];
-
+   
 jacxk = Jac*L;
 jaclk = Jac*c_R_v*v_R_o;
 end

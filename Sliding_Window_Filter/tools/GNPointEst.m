@@ -1,6 +1,5 @@
-function [pos, cost] = GNPointEst(cam_states, cam_obs, cam)
+function [pos, cost] = GNPointEst(cam_states, tmp_lms, cov)
 %% Calculate Position of Landmark Through Multiview Observations
-tmp_lms = cam.invK*cam_obs;
 % Initial estimate through triangulation using the first and last cam_states
 last_idx = length(cam_states);
 f_R_l = cam_states{1}.rot*cam_states{last_idx}.rot';
@@ -29,7 +28,7 @@ for optI = 1:maxIter
     
     for istate = 1:num_cams
         % Weighted Matrix
-        Sigma((2*istate-1):(2*istate),(2*istate-1):(2*istate)) = diag([cam.x_cov;cam.y_cov]);
+        Sigma((2*istate-1):(2*istate),(2*istate-1):(2*istate)) = diag([cov]);
         
         i_R_1 = cam_states{istate}.rot*cam_states{1}.rot';
         i_P_1 = cam_states{istate}.rot*(cam_states{1}.pos-cam_states{istate}.pos);
@@ -52,7 +51,7 @@ for optI = 1:maxIter
     
     % Solve the Equation
     H = Jacobian'*(Sigma\Jacobian);
-    b = Jacobian'*(Sigma*error);
+    b = Jacobian'*(Sigma\error);
     delta_pos = -H\b;
     est_pos = est_pos + delta_pos;
     
