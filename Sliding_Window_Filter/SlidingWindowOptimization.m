@@ -2,7 +2,7 @@ clc
 clear
 close all
 addpath('tools')
-file_name = '2011_09_26_drive_0001_sync_KLT.mat';
+file_name = '2011_09_26_drive_0095_sync_KLT.mat';
 load(file_name);
 %% Parameters Initialization
 % Camera Parameters
@@ -17,7 +17,6 @@ cam.cov = 25*ones(2,1);
 cam.x_cov = cam.cov(1)/cam.fx^2;
 cam.y_cov = cam.cov(2)/cam.fy^2;
 cam.K = [cam.fx, 0, cam.cx; 0, cam.fy, cam.cy; 0, 0, 1];
-cam.invK = inv(cam.K);
 % IMU Parameters
 imu.vel_cov = 0.1*ones(3,1);
 imu.omega_cov = 0.1*ones(3,1);
@@ -27,7 +26,7 @@ num_lm = size(all_cam_obs, 3);
 opt_lam = 1e-4;
 update_lam = 0.25;
 cost_thresh = 0.1e-2;
-win_size = 10;
+win_size = 50;
 max_iter = 5;
 start_idx = 1;
 end_idx = size(all_cam_obs, 2) - win_size -1;
@@ -41,6 +40,7 @@ imuonly_states = IMUOnlyStates(first_state, start_idx, end_idx, all_imu_measure,
 %% Sliding Window Optimization Fusing the Camera and IMU
 % Sliding Window
 sliding_states{1} = first_state;
+t_start = clock;
 for win_idx = start_idx:end_idx
     win_end = win_idx + win_size;
     if win_idx == start_idx
@@ -67,12 +67,13 @@ for win_idx = start_idx:end_idx
         kstate = current_states{kidx+1};
         v_T_o = [kstate.rot -kstate.rot*kstate.pos; 0 0 0 1];
         c_T_o = cam.c_T_v*v_T_o;
-        o_T_c = [c_T_o(1:3,1:3)', -c_T_o(1:3,1:3)'*c_T_o(1:3,4); 0 0 0 1];
+        o_T_c = inv(c_T_o);
         cam_state.rot = c_T_o(1:3,1:3);
         cam_state.pos = o_T_c(1:3,4);
         for obsidx = valid_obs_idx'
+            tmp_obs = all_cam_obs(:,k,obsidx);
             lm_obs{obsidx}.cam_states{end+1} = cam_state;
-            lm_obs{obsidx}.cam_obs(:,end+1) = [all_cam_obs(1:2,k,obsidx);1];
+            lm_obs{obsidx}.cam_obs(:,end+1) = [(tmp_obs(1)-cam.cx)/cam.fx; (tmp_obs(2)-cam.cy)/cam.fy; 1];
         end
     end
     
@@ -85,7 +86,7 @@ for win_idx = start_idx:end_idx
             cam_states = lm_obs{obslm_idx}.cam_states;
             cam_obs = lm_obs{obslm_idx}.cam_obs;
             % Triangulation and GN Optimization
-            [lm_cal, cost] = GNPointEst(cam_states, cam_obs, cam.invK, [cam.x_cov; cam.y_cov]);
+            [lm_cal, cost] = GNPointEst(cam_states, cam_obs, [cam.x_cov; cam.y_cov]);
             if cost < cost_thresh * length(cam_states)^2    
                 lm_est(:,obslm_idx) = lm_cal;
                 total_lm_obs = total_lm_obs + length(lm_obs{obslm_idx}.cam_states);
@@ -188,28 +189,70 @@ for win_idx = start_idx:end_idx
     fprintf('Window %d done, J = %.5f, %d iterations. \n', win_idx, best_cost, iter_idx);
     sliding_states{end+1} = current_states{2};
 end
-
-%% Ploting
-g_x = zeros(end_idx-start_idx, 1); g_y = zeros(end_idx-start_idx, 1); g_z = zeros(end_idx-start_idx, 1);
-i_x = zeros(end_idx-start_idx, 1); i_y = zeros(end_idx-start_idx, 1); i_z = zeros(end_idx-start_idx, 1);
-s_x = zeros(end_idx-start_idx, 1); s_y = zeros(end_idx-start_idx, 1); i_z = zeros(end_idx-start_idx, 1);
-for win_idx = start_idx:end_idx
-    i_x(win_idx) = -imuonly_states{win_idx}.pos(2);
-    i_y(win_idx) = imuonly_states{win_idx}.pos(1);
-    i_z(win_idx) = imuonly_states{win_idx}.pos(3);
-    g_x(win_idx) = -groundtruth.pos(2,win_idx);
-    g_y(win_idx) = groundtruth.pos(1,win_idx);
-    g_z(win_idx) = groundtruth.pos(3,win_idx);
-    s_x(win_idx) = -sliding_states{win_idx}.pos(2);
-    s_y(win_idx) = sliding_states{win_idx}.pos(1);
-    s_z(win_idx) = sliding_states{win_idx}.pos(3);
+t_end = clock;
+duration = etime(t_end, t_start);
+%% Error Calculation
+knum = length(sliding_states);
+for k = 1:knum
+    est_pos = sliding_states{k}.pos;
+    imuonly_pos = imuonly_states{k}.pos;
+    est_pos_err = groundtruth.pos(:,k) - est_pos; 
+    imu_est_pos_err = groundtruth.pos(:,k) - imuonly_pos;
+    
+    cam_pos_mse(k) = sqrt(mean(est_pos_err.^2, 1));
+    imu_cam_pos_mse(k) = sqrt(mean(imu_est_pos_err.^2));
+    
+    mse_idx(k) = k;
 end
-figure
-hold on
-grid on
-plot3(g_x,g_y,g_z,'k');
-plot3(i_x,i_y,i_z,'r');
-plot3(s_x,s_y,s_z,'g');
-view(3)
-legend('Groundtruth', 'IMU only', 'Sliding Window Filter')
-rmpath('tools')
+save([file_name, 'swf.mat'], 'duration', 'mse_idx', 'cam_pos_mse', 'imu_cam_pos_mse')
+plot(mse_idx, cam_pos_mse, mse_idx, imu_cam_pos_mse);
+%% Ploting
+% fps = 1;
+% video_name = 'swf.avi';
+% writerObj = VideoWriter(video_name);
+% writerObj.open();
+% fig_handle = figure();
+% set(gcf, 'color', 'white')
+
+% g_x = zeros(end_idx-start_idx, 1); g_y = zeros(end_idx-start_idx, 1); g_z = zeros(end_idx-start_idx, 1);
+% i_x = zeros(end_idx-start_idx, 1); i_y = zeros(end_idx-start_idx, 1); i_z = zeros(end_idx-start_idx, 1);
+% s_x = zeros(end_idx-start_idx, 1); s_y = zeros(end_idx-start_idx, 1); i_z = zeros(end_idx-start_idx, 1);
+% 
+% for win_idx = start_idx:end_idx
+%     i_x(win_idx) = -imuonly_states{win_idx}.pos(2);
+%     i_y(win_idx) = imuonly_states{win_idx}.pos(1);
+%     i_z(win_idx) = imuonly_states{win_idx}.pos(3);
+%     g_x(win_idx) = -groundtruth.pos(2,win_idx);
+%     g_y(win_idx) = groundtruth.pos(1,win_idx);
+%     g_z(win_idx) = groundtruth.pos(3,win_idx);
+%     s_x(win_idx) = -sliding_states{win_idx}.pos(2);
+%     s_y(win_idx) = sliding_states{win_idx}.pos(1);
+%     s_z(win_idx) = sliding_states{win_idx}.pos(3);
+% %     figure(fig_handle)
+% %     hold on
+% %     plot3(g_x(win_idx),g_y(win_idx),g_z(win_idx),'ok');
+% %     plot3(i_x(win_idx),i_y(win_idx),i_z(win_idx),'or');
+% %     plot3(s_x(win_idx),s_y(win_idx),s_z(win_idx),'og');
+% %     xlabel('x'); ylabel('y'); zlabel('z');
+% %     legend('Groundtruth', 'IMU only', 'Sliding Window Filter')
+% %     grid on
+% %     axis([-50, 100, 0, 150, -1, 3])
+% %     view(3)
+% %     if mod(win_idx, fps) == 0
+% %         frame = getframe(fig_handle);
+% %         writerObj.writeVideo(frame);
+% %     end
+% end
+
+% writerObj.close();
+% close(fig_handle);
+% rmpath('tools')
+
+% figure
+% hold on
+% grid on
+% plot3(g_x,g_y,g_z,'k');
+% plot3(i_x,i_y,i_z,'r');
+% plot3(s_x,s_y,s_z,'g');
+% view(3)
+% legend('Groundtruth', 'IMU only', 'Sliding Window Filter')
